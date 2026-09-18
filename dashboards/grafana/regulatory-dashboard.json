@@ -1,0 +1,143 @@
+{
+  "description": "NovaPay Regulatory Dashboard — Audit-ready compliance evidence for RBI IT Risk and PCI-DSS v4.0",
+  "editable": true,
+  "panels": [
+    {
+      "title": "Compliance Status",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "title": "Compliance Gate Pass Rate (30d)",
+      "type": "gauge",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 1 },
+      "targets": [{ "expr": "(sum(novapay_compliance_gate_passed_total) / sum(novapay_compliance_gate_total)) * 100" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 90, "max": 100, "thresholds": { "steps": [{ "color": "red", "value": 90 }, { "color": "yellow", "value": 95 }, { "color": "green", "value": 99 }] } } }
+    },
+    {
+      "title": "SAST Gate Results",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 3, "w": 6, "x": 6, "y": 1 },
+      "targets": [
+        { "expr": "sum(novapay_sast_critical_findings)", "legendFormat": "Critical" },
+        { "expr": "sum(novapay_sast_high_findings)", "legendFormat": "High" }
+      ],
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "color": "green", "value": 0 }, { "color": "red", "value": 1 }] } } }
+    },
+    {
+      "title": "DAST Gate Results",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 3, "w": 6, "x": 6, "y": 4 },
+      "targets": [
+        { "expr": "sum(novapay_dast_critical_findings)", "legendFormat": "Critical" },
+        { "expr": "sum(novapay_dast_high_findings)", "legendFormat": "High" }
+      ],
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "color": "green", "value": 0 }, { "color": "red", "value": 1 }] } } }
+    },
+    {
+      "title": "Open CVEs by Severity",
+      "type": "piechart",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 1 },
+      "targets": [
+        { "expr": "sum(novapay_cve_count{severity=\"critical\"})", "legendFormat": "Critical" },
+        { "expr": "sum(novapay_cve_count{severity=\"high\"})", "legendFormat": "High" },
+        { "expr": "sum(novapay_cve_count{severity=\"medium\"})", "legendFormat": "Medium" },
+        { "expr": "sum(novapay_cve_count{severity=\"low\"})", "legendFormat": "Low" }
+      ]
+    },
+    {
+      "title": "Image Signing Compliance",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 1 },
+      "targets": [{ "expr": "(sum(novapay_signed_images) / sum(novapay_total_images)) * 100", "legendFormat": "Signed %" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "thresholds": { "steps": [{ "color": "red", "value": 0 }, { "color": "green", "value": 100 }] } } }
+    },
+    {
+      "title": "RBI IT Risk Compliance Mapping",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 7 }
+    },
+    {
+      "title": "RBI Section 4.2 — Change Management",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 3, "w": 4, "x": 0, "y": 8 },
+      "targets": [{ "expr": "novapay_rbi_compliance_status{section=\"4.2\"}" }],
+      "fieldConfig": { "defaults": { "mappings": [{ "type": "value", "options": { "1": { "text": "COMPLIANT", "color": "green" }, "0": { "text": "NON-COMPLIANT", "color": "red" } } }] } }
+    },
+    {
+      "title": "RBI Section 4.3 — Segregation of Duties",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 3, "w": 4, "x": 4, "y": 8 },
+      "targets": [{ "expr": "novapay_rbi_compliance_status{section=\"4.3\"}" }],
+      "fieldConfig": { "defaults": { "mappings": [{ "type": "value", "options": { "1": { "text": "COMPLIANT", "color": "green" }, "0": { "text": "NON-COMPLIANT", "color": "red" } } }] } }
+    },
+    {
+      "title": "RBI Section 5.1 — Vulnerability Assessment",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 3, "w": 4, "x": 8, "y": 8 },
+      "targets": [{ "expr": "novapay_rbi_compliance_status{section=\"5.1\"}" }],
+      "fieldConfig": { "defaults": { "mappings": [{ "type": "value", "options": { "1": { "text": "COMPLIANT", "color": "green" }, "0": { "text": "NON-COMPLIANT", "color": "red" } } }] } }
+    },
+    {
+      "title": "RBI Section 5.4 — Encryption",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 3, "w": 4, "x": 12, "y": 8 },
+      "targets": [{ "expr": "novapay_rbi_compliance_status{section=\"5.4\"}" }],
+      "fieldConfig": { "defaults": { "mappings": [{ "type": "value", "options": { "1": { "text": "COMPLIANT", "color": "green" }, "0": { "text": "NON-COMPLIANT", "color": "red" } } }] } }
+    },
+    {
+      "title": "RBI Section 6.1 — Audit Trails",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 3, "w": 4, "x": 16, "y": 8 },
+      "targets": [{ "expr": "novapay_rbi_compliance_status{section=\"6.1\"}" }],
+      "fieldConfig": { "defaults": { "mappings": [{ "type": "value", "options": { "1": { "text": "COMPLIANT", "color": "green" }, "0": { "text": "NON-COMPLIANT", "color": "red" } } }] } }
+    },
+    {
+      "title": "RBI Section 6.3 — Incident Management",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 3, "w": 4, "x": 20, "y": 8 },
+      "targets": [{ "expr": "novapay_rbi_compliance_status{section=\"6.3\"}" }],
+      "fieldConfig": { "defaults": { "mappings": [{ "type": "value", "options": { "1": { "text": "COMPLIANT", "color": "green" }, "0": { "text": "NON-COMPLIANT", "color": "red" } } }] } }
+    },
+    {
+      "title": "Audit Trail",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 11 }
+    },
+    {
+      "title": "Compliance Gate Audit Log (Last 7 Days)",
+      "type": "table",
+      "datasource": "Loki",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 12 },
+      "targets": [
+        {
+          "expr": "{namespace=\"novapay-prod\", job=\"compliance-audit\"} |= \"gate\" | json | line_format \"{{.timestamp}} | {{.pipeline_run_id}} | {{.commit_sha}} | {{.gates_passed}}\"",
+          "legendFormat": ""
+        }
+      ]
+    }
+  ],
+  "refresh": "1h",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["novapay", "regulatory", "compliance", "rbi", "pci-dss", "audit"],
+  "time": { "from": "now-30d", "to": "now" },
+  "timezone": "Asia/Kolkata",
+  "title": "NovaPay Regulatory Compliance Dashboard",
+  "uid": "novapay-regulatory",
+  "version": 1
+}

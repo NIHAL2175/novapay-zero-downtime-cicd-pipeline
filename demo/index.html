@@ -1,0 +1,1463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NovaPay Digital Bank — CI/CD Pipeline Architecture</title>
+    <meta name="description" content="Zero-Downtime CI/CD Pipeline with Compliance Gates for NovaPay Digital Bank">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0e1a;
+            --bg-secondary: #111827;
+            --bg-card: #1a1f35;
+            --bg-card-hover: #222842;
+            --border: #2a3050;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent-blue: #3b82f6;
+            --accent-cyan: #06b6d4;
+            --accent-purple: #8b5cf6;
+            --accent-green: #10b981;
+            --accent-amber: #f59e0b;
+            --accent-red: #ef4444;
+            --accent-pink: #ec4899;
+            --gradient-blue: linear-gradient(135deg, #3b82f6, #06b6d4);
+            --gradient-purple: linear-gradient(135deg, #8b5cf6, #ec4899);
+            --gradient-green: linear-gradient(135deg, #10b981, #06b6d4);
+            --gradient-amber: linear-gradient(135deg, #f59e0b, #ef4444);
+            --glow-blue: 0 0 30px rgba(59, 130, 246, 0.15);
+            --glow-purple: 0 0 30px rgba(139, 92, 246, 0.15);
+            --glow-green: 0 0 30px rgba(16, 185, 129, 0.15);
+            --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+            --radius: 16px;
+            --radius-sm: 10px;
+            --radius-xs: 6px;
+        }
+
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html {
+            scroll-behavior: smooth;
+            font-size: 16px;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* === BACKGROUND EFFECTS === */
+        .bg-grid {
+            position: fixed;
+            inset: 0;
+            background-image:
+                radial-gradient(circle at 25% 25%, rgba(59, 130, 246, 0.03) 0%, transparent 50%),
+                radial-gradient(circle at 75% 75%, rgba(139, 92, 246, 0.03) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .bg-grid::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background-image: linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+                              linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+            background-size: 60px 60px;
+        }
+
+        /* === NAVIGATION === */
+        nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            background: rgba(10, 14, 26, 0.85);
+            backdrop-filter: blur(20px) saturate(180%);
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            padding: 0 2rem;
+            transition: all 0.3s ease;
+        }
+
+        nav.scrolled {
+            box-shadow: 0 4px 30px rgba(0,0,0,0.3);
+        }
+
+        .nav-inner {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 64px;
+        }
+
+        .nav-logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 700;
+            font-size: 1.1rem;
+            letter-spacing: -0.02em;
+        }
+
+        .nav-logo .logo-icon {
+            width: 32px;
+            height: 32px;
+            background: var(--gradient-blue);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.85rem;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2px;
+            list-style: none;
+        }
+
+        .nav-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.85rem;
+            font-weight: 500;
+            padding: 8px 14px;
+            border-radius: var(--radius-xs);
+            transition: all 0.2s ease;
+        }
+
+        .nav-links a:hover, .nav-links a.active {
+            color: var(--text-primary);
+            background: rgba(255,255,255,0.06);
+        }
+
+        /* === HERO === */
+        .hero {
+            position: relative;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 120px 2rem 80px;
+            text-align: center;
+            overflow: hidden;
+        }
+
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: -200px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 800px;
+            height: 800px;
+            background: radial-gradient(circle, rgba(59, 130, 246, 0.08) 0%, rgba(139, 92, 246, 0.04) 40%, transparent 70%);
+            pointer-events: none;
+        }
+
+        .hero-content {
+            position: relative;
+            z-index: 1;
+            max-width: 900px;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            border-radius: 100px;
+            padding: 6px 18px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: var(--accent-blue);
+            margin-bottom: 1.5rem;
+            animation: fadeInUp 0.8s ease;
+        }
+
+        .hero-badge .pulse {
+            width: 8px;
+            height: 8px;
+            background: var(--accent-green);
+            border-radius: 50%;
+            animation: pulse 2s ease infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.3); }
+        }
+
+        .hero h1 {
+            font-size: clamp(2.5rem, 5vw, 4rem);
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            line-height: 1.1;
+            margin-bottom: 1.5rem;
+            animation: fadeInUp 0.8s ease 0.1s backwards;
+        }
+
+        .hero h1 .gradient-text {
+            background: var(--gradient-blue);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero p {
+            font-size: 1.15rem;
+            color: var(--text-secondary);
+            max-width: 700px;
+            margin: 0 auto 2.5rem;
+            line-height: 1.7;
+            animation: fadeInUp 0.8s ease 0.2s backwards;
+        }
+
+        .hero-stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1px;
+            background: var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+            animation: fadeInUp 0.8s ease 0.3s backwards;
+        }
+
+        .hero-stat {
+            background: var(--bg-card);
+            padding: 1.5rem 1rem;
+            text-align: center;
+            transition: background 0.3s ease;
+        }
+
+        .hero-stat:hover {
+            background: var(--bg-card-hover);
+        }
+
+        .hero-stat .value {
+            font-size: 1.8rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            margin-bottom: 4px;
+        }
+
+        .hero-stat .label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 600;
+        }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* === SECTIONS === */
+        section {
+            position: relative;
+            z-index: 1;
+            padding: 100px 2rem;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .section-header {
+            text-align: center;
+            margin-bottom: 4rem;
+        }
+
+        .section-label {
+            display: inline-block;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--accent-cyan);
+            margin-bottom: 0.75rem;
+        }
+
+        .section-title {
+            font-size: clamp(1.8rem, 3vw, 2.5rem);
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            margin-bottom: 1rem;
+        }
+
+        .section-subtitle {
+            font-size: 1.05rem;
+            color: var(--text-secondary);
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        /* === PIPELINE VISUALIZATION === */
+        .pipeline-flow {
+            display: flex;
+            align-items: stretch;
+            gap: 0;
+            overflow-x: auto;
+            padding: 2rem 0;
+            scroll-snap-type: x mandatory;
+        }
+
+        .pipeline-stage {
+            flex: 0 0 auto;
+            width: 160px;
+            scroll-snap-align: center;
+            position: relative;
+            cursor: pointer;
+        }
+
+        .pipeline-stage:not(:last-child)::after {
+            content: '';
+            position: absolute;
+            top: 40px;
+            right: -1px;
+            width: 2px;
+            height: 0;
+            background: var(--accent-blue);
+            transition: height 0.5s ease;
+        }
+
+        .stage-node {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 1.2rem 0.8rem;
+            text-align: center;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stage-node::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--gradient-blue);
+            transform: scaleX(0);
+            transition: transform 0.4s ease;
+        }
+
+        .pipeline-stage:hover .stage-node::before,
+        .pipeline-stage.active .stage-node::before {
+            transform: scaleX(1);
+        }
+
+        .pipeline-stage:hover .stage-node,
+        .pipeline-stage.active .stage-node {
+            border-color: rgba(59, 130, 246, 0.3);
+            box-shadow: var(--glow-blue);
+            transform: translateY(-4px);
+        }
+
+        .stage-number {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            color: var(--accent-blue);
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .stage-icon {
+            font-size: 1.8rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .stage-name {
+            font-size: 0.78rem;
+            font-weight: 600;
+            margin-bottom: 0.3rem;
+            line-height: 1.3;
+        }
+
+        .stage-tool {
+            font-size: 0.68rem;
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+        }
+
+        .stage-time {
+            font-size: 0.65rem;
+            color: var(--accent-cyan);
+            font-weight: 600;
+            margin-top: 0.5rem;
+        }
+
+        .stage-connector {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 4px;
+            flex: 0 0 40px;
+        }
+
+        .connector-line {
+            height: 2px;
+            width: 100%;
+            background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan));
+            position: relative;
+            opacity: 0.4;
+        }
+
+        .connector-line::after {
+            content: '▸';
+            position: absolute;
+            right: -6px;
+            top: -9px;
+            color: var(--accent-cyan);
+            font-size: 0.8rem;
+            opacity: 0.6;
+        }
+
+        .parallel-block {
+            background: rgba(245, 158, 11, 0.05);
+            border: 1px dashed rgba(245, 158, 11, 0.2);
+            border-radius: var(--radius);
+            padding: 0.8rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            flex: 0 0 auto;
+            width: 340px;
+        }
+
+        .parallel-label {
+            font-size: 0.65rem;
+            color: var(--accent-amber);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            text-align: center;
+        }
+
+        .parallel-stages {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .parallel-stages .pipeline-stage {
+            flex: 1;
+            width: auto;
+        }
+
+        /* === DORA METRICS === */
+        .dora-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1.5rem;
+        }
+
+        .dora-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 2rem;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .dora-card:hover {
+            border-color: rgba(59, 130, 246, 0.3);
+            box-shadow: var(--glow-blue);
+            transform: translateY(-4px);
+        }
+
+        .dora-card .card-icon {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+        }
+
+        .dora-card .metric-label {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .dora-card .metric-before {
+            font-size: 1rem;
+            color: var(--accent-red);
+            text-decoration: line-through;
+            opacity: 0.7;
+            font-weight: 500;
+        }
+
+        .dora-card .metric-after {
+            font-size: 2.2rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            margin: 0.3rem 0;
+        }
+
+        .dora-card .metric-target {
+            font-size: 0.75rem;
+            color: var(--accent-green);
+            font-weight: 600;
+        }
+
+        .dora-card .progress-bar {
+            height: 4px;
+            background: rgba(255,255,255,0.06);
+            border-radius: 4px;
+            margin-top: 1rem;
+            overflow: hidden;
+        }
+
+        .dora-card .progress-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 1.5s ease;
+            width: 0;
+        }
+
+        /* === DELIVERABLES === */
+        .deliverables-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 1.2rem;
+        }
+
+        .deliverable-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .deliverable-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            transition: opacity 0.3s ease;
+            opacity: 0;
+        }
+
+        .deliverable-card:hover::before {
+            opacity: 1;
+        }
+
+        .deliverable-card:hover {
+            border-color: rgba(255,255,255,0.1);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+        }
+
+        .deliverable-card:nth-child(1)::before { background: var(--gradient-blue); }
+        .deliverable-card:nth-child(2)::before { background: var(--gradient-green); }
+        .deliverable-card:nth-child(3)::before { background: var(--gradient-purple); }
+        .deliverable-card:nth-child(4)::before { background: var(--gradient-amber); }
+        .deliverable-card:nth-child(5)::before { background: linear-gradient(135deg, #06b6d4, #3b82f6); }
+        .deliverable-card:nth-child(6)::before { background: linear-gradient(135deg, #ef4444, #f59e0b); }
+        .deliverable-card:nth-child(7)::before { background: linear-gradient(135deg, #10b981, #8b5cf6); }
+        .deliverable-card:nth-child(8)::before { background: linear-gradient(135deg, #ec4899, #8b5cf6); }
+
+        .deliverable-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 0.8rem;
+        }
+
+        .deliverable-num {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.85rem;
+            flex-shrink: 0;
+        }
+
+        .deliverable-card:nth-child(1) .deliverable-num { background: rgba(59, 130, 246, 0.15); color: var(--accent-blue); }
+        .deliverable-card:nth-child(2) .deliverable-num { background: rgba(16, 185, 129, 0.15); color: var(--accent-green); }
+        .deliverable-card:nth-child(3) .deliverable-num { background: rgba(139, 92, 246, 0.15); color: var(--accent-purple); }
+        .deliverable-card:nth-child(4) .deliverable-num { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); }
+        .deliverable-card:nth-child(5) .deliverable-num { background: rgba(6, 182, 212, 0.15); color: var(--accent-cyan); }
+        .deliverable-card:nth-child(6) .deliverable-num { background: rgba(239, 68, 68, 0.15); color: var(--accent-red); }
+        .deliverable-card:nth-child(7) .deliverable-num { background: rgba(16, 185, 129, 0.15); color: var(--accent-green); }
+        .deliverable-card:nth-child(8) .deliverable-num { background: rgba(236, 72, 153, 0.15); color: var(--accent-pink); }
+
+        .deliverable-title {
+            font-size: 0.95rem;
+            font-weight: 700;
+        }
+
+        .deliverable-desc {
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            margin-bottom: 1rem;
+        }
+
+        .deliverable-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .tag {
+            font-size: 0.68rem;
+            font-family: var(--font-mono);
+            padding: 3px 10px;
+            border-radius: 100px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            color: var(--text-muted);
+        }
+
+        /* === COMPLIANCE === */
+        .compliance-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+        }
+
+        .compliance-table th {
+            background: var(--bg-card);
+            padding: 1rem 1.2rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-muted);
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .compliance-table td {
+            padding: 0.9rem 1.2rem;
+            font-size: 0.85rem;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+            transition: background 0.2s ease;
+        }
+
+        .compliance-table tr:hover td {
+            background: rgba(255,255,255,0.02);
+        }
+
+        .compliance-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 4px 12px;
+            border-radius: 100px;
+        }
+
+        .status-badge.pass {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--accent-green);
+        }
+
+        .status-badge.block {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--accent-red);
+        }
+
+        /* === TECH STACK === */
+        .tech-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .tech-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 1.2rem;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: all 0.3s ease;
+        }
+
+        .tech-card:hover {
+            border-color: rgba(255,255,255,0.1);
+            transform: translateY(-2px);
+        }
+
+        .tech-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+
+        .tech-name {
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .tech-purpose {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+        }
+
+        /* === INCIDENT TIMELINE === */
+        .timeline {
+            position: relative;
+            padding-left: 40px;
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 15px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(to bottom, var(--accent-red), var(--accent-amber), var(--accent-green));
+        }
+
+        .timeline-item {
+            position: relative;
+            margin-bottom: 1.5rem;
+            padding: 1rem 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            transition: all 0.3s ease;
+        }
+
+        .timeline-item:hover {
+            border-color: rgba(255,255,255,0.1);
+        }
+
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: -33px;
+            top: 18px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 2px solid;
+        }
+
+        .timeline-item.critical::before { border-color: var(--accent-red); background: rgba(239, 68, 68, 0.3); }
+        .timeline-item.action::before { border-color: var(--accent-amber); background: rgba(245, 158, 11, 0.3); }
+        .timeline-item.resolved::before { border-color: var(--accent-green); background: rgba(16, 185, 129, 0.3); }
+
+        .timeline-time {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--accent-cyan);
+            margin-bottom: 0.3rem;
+        }
+
+        .timeline-title {
+            font-size: 0.9rem;
+            font-weight: 700;
+            margin-bottom: 0.3rem;
+        }
+
+        .timeline-desc {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        /* === FILE TREE === */
+        .file-tree {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1.5rem 2rem;
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            line-height: 1.8;
+            overflow-x: auto;
+            color: var(--text-secondary);
+        }
+
+        .file-tree .dir { color: var(--accent-blue); font-weight: 600; }
+        .file-tree .file { color: var(--text-secondary); }
+        .file-tree .new { color: var(--accent-green); }
+        .file-tree .comment { color: var(--text-muted); font-style: italic; }
+
+        /* === FOOTER === */
+        footer {
+            position: relative;
+            z-index: 1;
+            border-top: 1px solid var(--border);
+            padding: 3rem 2rem;
+            text-align: center;
+        }
+
+        footer p {
+            color: var(--text-muted);
+            font-size: 0.82rem;
+        }
+
+        footer .footer-brand {
+            font-weight: 700;
+            background: var(--gradient-blue);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* === RESPONSIVE === */
+        @media (max-width: 900px) {
+            .hero-stats { grid-template-columns: repeat(2, 1fr); }
+            .dora-grid { grid-template-columns: repeat(2, 1fr); }
+            .nav-links { display: none; }
+        }
+
+        @media (max-width: 600px) {
+            .hero-stats { grid-template-columns: 1fr 1fr; }
+            .dora-grid { grid-template-columns: 1fr; }
+            section { padding: 60px 1rem; }
+        }
+
+        /* === SCROLL ANIMATIONS === */
+        .reveal {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .reveal.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* === COUNTER ANIMATION === */
+        .count-up {
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-grid"></div>
+
+    <!-- Navigation -->
+    <nav id="navbar">
+        <div class="nav-inner">
+            <div class="nav-logo">
+                <div class="logo-icon">⚡</div>
+                <span>NovaPay</span>
+            </div>
+            <ul class="nav-links">
+                <li><a href="#pipeline" class="active">Pipeline</a></li>
+                <li><a href="#dora">DORA Metrics</a></li>
+                <li><a href="#deliverables">Deliverables</a></li>
+                <li><a href="#compliance">Compliance</a></li>
+                <li><a href="#incident">Incident Sim</a></li>
+                <li><a href="#tech">Tech Stack</a></li>
+                <li><a href="#structure">Repository</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Hero -->
+    <section class="hero" id="hero">
+        <div class="hero-content">
+            <div class="hero-badge">
+                <span class="pulse"></span>
+                DevOps & Cloud Engineer — Nihal N
+            </div>
+            <h1>Zero-Downtime <span class="gradient-text">CI/CD Pipeline</span> with Compliance Gates</h1>
+            <p>Production-grade 8-stage pipeline for NovaPay Digital Bank. Automated security scanning, RBI/PCI-DSS compliance gates, blue-green & canary deployments, and sub-60-second automated rollback.</p>
+            <div class="hero-stats">
+                <div class="hero-stat">
+                    <div class="value" style="color: var(--accent-blue)"><span class="count-up" data-target="8">0</span></div>
+                    <div class="label">Pipeline Stages</div>
+                </div>
+                <div class="hero-stat">
+                    <div class="value" style="color: var(--accent-green)"><span class="count-up" data-target="6">0</span>+</div>
+                    <div class="label">Compliance Gates</div>
+                </div>
+                <div class="hero-stat">
+                    <div class="value" style="color: var(--accent-purple)">&lt;<span class="count-up" data-target="90">0</span>m</div>
+                    <div class="label">Commit to Prod</div>
+                </div>
+                <div class="hero-stat">
+                    <div class="value" style="color: var(--accent-amber)"><span class="count-up" data-target="66">0</span></div>
+                    <div class="label">Project Files</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pipeline Visualization -->
+    <section id="pipeline">
+        <div class="container">
+            <div class="section-header reveal">
+                <div class="section-label">Architecture</div>
+                <h2 class="section-title">8-Stage Pipeline Flow</h2>
+                <p class="section-subtitle">Security-by-default pipeline with parallel execution achieving >40% parallelisation</p>
+            </div>
+            <div class="pipeline-flow reveal">
+                <div class="pipeline-stage" data-stage="1">
+                    <div class="stage-node">
+                        <div class="stage-number">STAGE 01</div>
+                        <div class="stage-icon">🔗</div>
+                        <div class="stage-name">Source Control & Trigger</div>
+                        <div class="stage-tool">GitHub Enterprise</div>
+                        <div class="stage-time">~30s</div>
+                    </div>
+                </div>
+                <div class="stage-connector"><div class="connector-line"></div></div>
+                <div class="pipeline-stage" data-stage="2">
+                    <div class="stage-node">
+                        <div class="stage-number">STAGE 02</div>
+                        <div class="stage-icon">🔨</div>
+                        <div class="stage-name">Build & Compilation</div>
+                        <div class="stage-tool">Gradle + Docker</div>
+                        <div class="stage-time">~12 min</div>
+                    </div>
+                </div>
+                <div class="stage-connector"><div class="connector-line"></div></div>
+                <div class="parallel-block">
+                    <div class="parallel-label">⚡ Parallel Execution (~15 min)</div>
+                    <div class="parallel-stages">
+                        <div class="pipeline-stage" data-stage="3">
+                            <div class="stage-node">
+                                <div class="stage-number">STAGE 03</div>
+                                <div class="stage-icon">🔍</div>
+                                <div class="stage-name">SAST</div>
+                                <div class="stage-tool">SonarQube</div>
+                                <div class="stage-time">~15 min</div>
+                            </div>
+                        </div>
+                        <div class="pipeline-stage" data-stage="4">
+                            <div class="stage-node">
+                                <div class="stage-number">STAGE 04</div>
+                                <div class="stage-icon">📦</div>
+                                <div class="stage-name">Scanning</div>
+                                <div class="stage-tool">Trivy + Cosign</div>
+                                <div class="stage-time">~10 min</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="stage-connector"><div class="connector-line"></div></div>
+                <div class="pipeline-stage" data-stage="5">
+                    <div class="stage-node">
+                        <div class="stage-number">STAGE 05</div>
+                        <div class="stage-icon">🧪</div>
+                        <div class="stage-name">Integration & Contract Tests</div>
+                        <div class="stage-tool">Pact + Testcontainers</div>
+                        <div class="stage-time">~18 min</div>
+                    </div>
+                </div>
+                <div class="stage-connector"><div class="connector-line"></div></div>
+                <div class="pipeline-stage" data-stage="6">
+                    <div class="stage-node">
+                        <div class="stage-number">STAGE 06</div>
+                        <div class="stage-icon">🛡️</div>
+                        <div class="stage-name">DAST</div>
+                        <div class="stage-tool">OWASP ZAP</div>
+                        <div class="stage-time">~25 min</div>
+                    </div>
+                </div>
+                <div class="stage-connector"><div class="connector-line"></div></div>
+                <div class="pipeline-stage" data-stage="7">
+                    <div class="stage-node">
+                        <div class="stage-number">STAGE 07</div>
+                        <div class="stage-icon">📋</div>
+                        <div class="stage-name">Compliance Gates</div>
+                        <div class="stage-tool">OPA / Kyverno</div>
+                        <div class="stage-time">~5 min</div>
+                    </div>
+                </div>
+                <div class="stage-connector"><div class="connector-line"></div></div>
+                <div class="pipeline-stage" data-stage="8">
+                    <div class="stage-node">
+                        <div class="stage-number">STAGE 08</div>
+                        <div class="stage-icon">🚀</div>
+                        <div class="stage-name">Deployment & Verification</div>
+                        <div class="stage-tool">ArgoCD + Istio</div>
+                        <div class="stage-time">~30 min</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- DORA Metrics -->
+    <section id="dora" style="background: var(--bg-secondary);">
+        <div class="container">
+            <div class="section-header reveal">
+                <div class="section-label">Performance</div>
+                <h2 class="section-title">DORA Elite Metrics — Before & After</h2>
+                <p class="section-subtitle">Transforming NovaPay from manual deployments to industry-leading DevOps maturity</p>
+            </div>
+            <div class="dora-grid reveal">
+                <div class="dora-card">
+                    <div class="card-icon">📈</div>
+                    <div class="metric-label">Deployment Frequency</div>
+                    <div class="metric-before">1x / 2 weeks</div>
+                    <div class="metric-after" style="color: var(--accent-blue)">Multiple/day</div>
+                    <div class="metric-target">✅ DORA Elite</div>
+                    <div class="progress-bar"><div class="progress-fill" style="background: var(--gradient-blue);" data-width="95"></div></div>
+                </div>
+                <div class="dora-card">
+                    <div class="card-icon">⏱️</div>
+                    <div class="metric-label">Lead Time for Changes</div>
+                    <div class="metric-before">~2 weeks</div>
+                    <div class="metric-after" style="color: var(--accent-green)">&lt;90 min</div>
+                    <div class="metric-target">✅ DORA Elite (&lt;1 hour target)</div>
+                    <div class="progress-bar"><div class="progress-fill" style="background: var(--gradient-green);" data-width="90"></div></div>
+                </div>
+                <div class="dora-card">
+                    <div class="card-icon">🛑</div>
+                    <div class="metric-label">Change Failure Rate</div>
+                    <div class="metric-before">Unknown (no tracking)</div>
+                    <div class="metric-after" style="color: var(--accent-purple)">&lt;5%</div>
+                    <div class="metric-target">✅ DORA Elite</div>
+                    <div class="progress-bar"><div class="progress-fill" style="background: var(--gradient-purple);" data-width="92"></div></div>
+                </div>
+                <div class="dora-card">
+                    <div class="card-icon">🔄</div>
+                    <div class="metric-label">Mean Time to Recovery</div>
+                    <div class="metric-before">4.5 hours</div>
+                    <div class="metric-after" style="color: var(--accent-amber)">&lt;15 min</div>
+                    <div class="metric-target">✅ DORA Elite (auto-rollback: &lt;60s)</div>
+                    <div class="progress-bar"><div class="progress-fill" style="background: var(--gradient-amber);" data-width="96"></div></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Deliverables -->
+    <section id="deliverables">
+        <div class="container">
+            <div class="section-header reveal">
+                <div class="section-label">Documentation</div>
+                <h2 class="section-title">8 Core Deliverables</h2>
+                <p class="section-subtitle">Comprehensive architecture documentation with regulatory mapping</p>
+            </div>
+            <div class="deliverables-grid reveal">
+                <div class="deliverable-card">
+                    <div class="deliverable-header">
+                        <div class="deliverable-num">1</div>
+                        <div class="deliverable-title">Pipeline Architecture</div>
+                    </div>
+                    <div class="deliverable-desc">8-stage pipeline with Mermaid flow diagram, parallel execution strategy, stage timing estimates, and cross-references.</div>
+                    <div class="deliverable-tags"><span class="tag">architecture.md</span><span class="tag">8 stage files</span><span class="tag">9 KB</span></div>
+                </div>
+                <div class="deliverable-card">
+                    <div class="deliverable-header">
+                        <div class="deliverable-num">2</div>
+                        <div class="deliverable-title">Deployment Strategies</div>
+                    </div>
+                    <div class="deliverable-desc">Blue-green & canary with Istio VirtualService, 4-phase canary progression, and statistical analysis (Welch's t-test).</div>
+                    <div class="deliverable-tags"><span class="tag">blue-green</span><span class="tag">canary</span><span class="tag">11 KB</span></div>
+                </div>
+                <div class="deliverable-card">
+                    <div class="deliverable-header">
+                        <div class="deliverable-num">3</div>
+                        <div class="deliverable-title">Compliance Gates</div>
+                    </div>
+                    <div class="deliverable-desc">6+ automated gates with precise thresholds, exception workflows, and mappings to RBI IT Risk & PCI-DSS v4.0.</div>
+                    <div class="deliverable-tags"><span class="tag">RBI</span><span class="tag">PCI-DSS</span><span class="tag">OPA</span><span class="tag">11 KB</span></div>
+                </div>
+                <div class="deliverable-card">
+                    <div class="deliverable-header">
+                        <div class="deliverable-num">4</div>
+                        <div class="deliverable-title">Database Migration</div>
+                    </div>
+                    <div class="deliverable-desc">Zero-downtime expand-contract pattern for 100M+ row tables with pgroll, version compatibility matrix, and batch backfill.</div>
+                    <div class="deliverable-tags"><span class="tag">PostgreSQL</span><span class="tag">pgroll</span><span class="tag">11 KB</span></div>
+                </div>
+                <div class="deliverable-card">
+                    <div class="deliverable-header">
+                        <div class="deliverable-num">5</div>
+                        <div class="deliverable-title">Environment Promotion</div>
+                    </div>
+                    <div class="deliverable-desc">4-environment model (dev → staging → pre-prod → prod) with RBAC, promotion criteria, and configuration management.</div>
+                    <div class="deliverable-tags"><span class="tag">4 environments</span><span class="tag">Vault</span><span class="tag">10 KB</span></div>
+                </div>
+                <div class="deliverable-card">
+                    <div class="deliverable-header">
+                        <div class="deliverable-num">6</div>
+                        <div class="deliverable-title">Rollback Specification</div>
+                    </div>
+                    <div class="deliverable-desc">3-category automated rollback (A: &lt;60s, B: &lt;15m, C: manual) with 8-step execution workflow and trigger taxonomy.</div>
+                    <div class="deliverable-tags"><span class="tag">Cat A/B/C</span><span class="tag">Prometheus</span><span class="tag">11 KB</span></div>
+                </div>
+                <div class="deliverable-card">
+                    <div class="deliverable-header">
+                        <div class="deliverable-num">7</div>
+                        <div class="deliverable-title">Runbook & Playbook</div>
+                    </div>
+                    <div class="deliverable-desc">Production deployment runbook (3 AM standard) with 8-item checklist + incident playbook with 4-level severity classification.</div>
+                    <div class="deliverable-tags"><span class="tag">runbook</span><span class="tag">playbook</span><span class="tag">17 KB</span></div>
+                </div>
+                <div class="deliverable-card">
+                    <div class="deliverable-header">
+                        <div class="deliverable-num">8</div>
+                        <div class="deliverable-title">Observability & DORA</div>
+                    </div>
+                    <div class="deliverable-desc">DORA metrics implementation, 15+ pipeline metrics, 3 Grafana dashboards (Engineering, Management, Regulatory).</div>
+                    <div class="deliverable-tags"><span class="tag">Prometheus</span><span class="tag">Grafana</span><span class="tag">12 KB</span></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Compliance -->
+    <section id="compliance" style="background: var(--bg-secondary);">
+        <div class="container">
+            <div class="section-header reveal">
+                <div class="section-label">Regulatory</div>
+                <h2 class="section-title">RBI & PCI-DSS Compliance Mapping</h2>
+                <p class="section-subtitle">Every compliance gate maps directly to regulatory requirements</p>
+            </div>
+            <div class="reveal" style="overflow-x: auto;">
+                <table class="compliance-table">
+                    <thead>
+                        <tr>
+                            <th>Gate</th>
+                            <th>Tool</th>
+                            <th>Threshold</th>
+                            <th>On Failure</th>
+                            <th>RBI / PCI-DSS</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>SAST</strong></td>
+                            <td>SonarQube 10.x</td>
+                            <td>0 Critical, ≤ 2 High, ≥ 80% coverage</td>
+                            <td>Pipeline blocked, auto-ticket</td>
+                            <td>PCI-DSS 6.2</td>
+                            <td><span class="status-badge pass">✓ Implemented</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>DAST</strong></td>
+                            <td>OWASP ZAP 2.14+</td>
+                            <td>0 Critical/High from OWASP Top 10</td>
+                            <td>Pipeline blocked</td>
+                            <td>PCI-DSS 6.4, 11.3</td>
+                            <td><span class="status-badge pass">✓ Implemented</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Dependency</strong></td>
+                            <td>Trivy 0.50+</td>
+                            <td>0 Critical CVE, SBOM generated</td>
+                            <td>Pipeline blocked</td>
+                            <td>PCI-DSS 6.3, RBI 5.1</td>
+                            <td><span class="status-badge pass">✓ Implemented</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Licence</strong></td>
+                            <td>Trivy / FOSSA</td>
+                            <td>No GPL/AGPL/SSPL dependencies</td>
+                            <td>Legal review triggered</td>
+                            <td>RBI 7.2</td>
+                            <td><span class="status-badge pass">✓ Implemented</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Policy</strong></td>
+                            <td>OPA / Kyverno</td>
+                            <td>All K8s policies pass</td>
+                            <td>Deployment rejected</td>
+                            <td>RBI 4.2</td>
+                            <td><span class="status-badge pass">✓ Implemented</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>IaC</strong></td>
+                            <td>Checkov</td>
+                            <td>No privileged containers, limits set</td>
+                            <td>PR blocked</td>
+                            <td>PCI-DSS 6.5</td>
+                            <td><span class="status-badge pass">✓ Implemented</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- Incident Simulation -->
+    <section id="incident">
+        <div class="container">
+            <div class="section-header reveal">
+                <div class="section-label">Crisis Response</div>
+                <h2 class="section-title">Friday 5:07 PM — Incident Simulation</h2>
+                <p class="section-subtitle">Hotfix bypasses staging → canary failure → automated rollback in 30 seconds</p>
+            </div>
+            <div class="timeline reveal">
+                <div class="timeline-item critical">
+                    <div class="timeline-time">T+0:00 — 17:07:00 IST</div>
+                    <div class="timeline-title">🔴 Three Alerts Fire Simultaneously</div>
+                    <div class="timeline-desc">HTTP 500 at 12% • PostgreSQL pool exhaustion • Payment gateway timeouts at 35%</div>
+                </div>
+                <div class="timeline-item critical">
+                    <div class="timeline-time">T+0:15 — 17:07:15 IST</div>
+                    <div class="timeline-title">⚡ Category A Rollback Triggered</div>
+                    <div class="timeline-desc">Automated rollback initiated — zero human intervention. Error rate 12% exceeds 5% threshold.</div>
+                </div>
+                <div class="timeline-item action">
+                    <div class="timeline-time">T+0:30 — 17:07:30 IST</div>
+                    <div class="timeline-title">👤 SRE On-Call Acknowledges</div>
+                    <div class="timeline-desc">Classified as SEV-1. Automated rollback already in progress. Confirms stable pods healthy.</div>
+                </div>
+                <div class="timeline-item resolved">
+                    <div class="timeline-time">T+0:45 — 17:07:45 IST</div>
+                    <div class="timeline-title">✅ Rollback Complete — 30 Seconds</div>
+                    <div class="timeline-desc">100% traffic on stable version. Error rate back to 0.02%. PostgreSQL connections normal at 45/100.</div>
+                </div>
+                <div class="timeline-item action">
+                    <div class="timeline-time">T+3:00 — 17:10:00 IST</div>
+                    <div class="timeline-title">🔎 Root Cause Identified</div>
+                    <div class="timeline-desc">Hotfix bypassed staging → untested DB connection change → unlimited connections → pool exhaustion → cascading failures.</div>
+                </div>
+                <div class="timeline-item resolved">
+                    <div class="timeline-time">T+23:00 — 17:30:00 IST</div>
+                    <div class="timeline-title">📝 Incident Resolved — Post-Mortem Scheduled</div>
+                    <div class="timeline-desc">Impact: &lt;2% users for ~8 minutes. 340 failed transactions (recovered). 7 action items tracked.</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Tech Stack -->
+    <section id="tech" style="background: var(--bg-secondary);">
+        <div class="container">
+            <div class="section-header reveal">
+                <div class="section-label">Infrastructure</div>
+                <h2 class="section-title">Technology Stack</h2>
+                <p class="section-subtitle">All open-source or free-tier tools — no paid tools required</p>
+            </div>
+            <div class="tech-grid reveal">
+                <div class="tech-card">
+                    <div class="tech-icon" style="background: rgba(59,130,246,0.15); color: var(--accent-blue);">⚙️</div>
+                    <div><div class="tech-name">GitHub Actions</div><div class="tech-purpose">CI/CD Pipeline Engine</div></div>
+                </div>
+                <div class="tech-card">
+                    <div class="tech-icon" style="background: rgba(16,185,129,0.15); color: var(--accent-green);">🔄</div>
+                    <div><div class="tech-name">ArgoCD 2.x</div><div class="tech-purpose">GitOps Deployments</div></div>
+                </div>
+                <div class="tech-card">
+                    <div class="tech-icon" style="background: rgba(139,92,246,0.15); color: var(--accent-purple);">🏗️</div>
+                    <div><div class="tech-name">Terraform 1.7+</div><div class="tech-purpose">Infrastructure as Code</div></div>
+                </div>
+                <div class="tech-card">
+                    <div class="tech-icon" style="background: rgba(6,182,212,0.15); color: var(--accent-cyan);">📦</div>
+                    <div><div class="tech-name">Helm 3.x</div><div class="tech-purpose">K8s Packaging</div></div>
+                </div>
+                <div class="tech-card">
+                    <div class="tech-icon" style="background: rgba(245,158,11,0.15); color: var(--accent-amber);">🔍</div>
+                    <div><div class="tech-name">SonarQube 10.x</div><div class="tech-purpose">SAST / Code Quality</div></div>
+                </div>
+                <div class="tech-card">
+                    <div class="tech-icon" style="background: rgba(239,68,68,0.15); color: var(--accent-red);">🛡️</div>
+                    <div><div class="tech-name">OWASP ZAP 2.14+</div><div class="tech-purpose">DAST Scanning</div></div>
+                </div>
+                <div class="tech-card">
+                    <div class="tech-icon" style="background: rgba(16,185,129,0.15); color: var(--accent-green);">📦</div>
+                    <div><div class="tech-name">Trivy 0.50+</div><div class="tech-purpose">Container Scanning</div></div>
+                </div>
+                <div class="tech-card">
+                    <div class="tech-icon" style="background: rgba(236,72,153,0.15); color: var(--accent-pink);">✍️</div>
+                    <div><div class="tech-name">Cosign (Sigstore)</div><div class="tech-purpose">Image Signing</div></div>
+                </div>
+                <div class="tech-card">
+                    <div class="tech-icon" style="background: rgba(59,130,246,0.15); color: var(--accent-blue);">📋</div>
+                    <div><div class="tech-name">OPA / Kyverno</div><div class="tech-purpose">Policy Engine</div></div>
+                </div>
+                <div class="tech-card">
+                    <div class="tech-icon" style="background: rgba(245,158,11,0.15); color: var(--accent-amber);">🌐</div>
+                    <div><div class="tech-name">Istio</div><div class="tech-purpose">Service Mesh / Traffic</div></div>
+                </div>
+                <div class="tech-card">
+                    <div class="tech-icon" style="background: rgba(239,68,68,0.15); color: var(--accent-red);">📊</div>
+                    <div><div class="tech-name">Prometheus</div><div class="tech-purpose">Metrics Collection</div></div>
+                </div>
+                <div class="tech-card">
+                    <div class="tech-icon" style="background: rgba(139,92,246,0.15); color: var(--accent-purple);">📈</div>
+                    <div><div class="tech-name">Grafana</div><div class="tech-purpose">Dashboards & Alerts</div></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Repository Structure -->
+    <section id="structure">
+        <div class="container">
+            <div class="section-header reveal">
+                <div class="section-label">Repository</div>
+                <h2 class="section-title">Project Structure — 66 Files</h2>
+                <p class="section-subtitle">Complete repository matching the prescribed layout</p>
+            </div>
+            <div class="file-tree reveal">
+<span class="dir">Project1A-DevOps&CloudEngineer-Nihal N/</span>
+├── <span class="new">README.md</span>               <span class="comment"># Project overview + navigation</span>
+├── <span class="new">ERRATA.md</span>               <span class="comment"># 3 deliberate errors corrected</span>
+├── <span class="dir">docs/</span>
+│   ├── <span class="dir">01-pipeline-architecture/</span>   <span class="comment"># architecture.md + 8 stage specs</span>
+│   ├── <span class="dir">02-deployment-strategies/</span>   <span class="comment"># Blue-green + canary (11 KB)</span>
+│   ├── <span class="dir">03-compliance-gates/</span>        <span class="comment"># 6+ gates with RBI/PCI-DSS (11 KB)</span>
+│   ├── <span class="dir">04-database-migration/</span>      <span class="comment"># Expand-contract ZDT (11 KB)</span>
+│   ├── <span class="dir">05-environment-promotion/</span>   <span class="comment"># 4-env model (10 KB)</span>
+│   ├── <span class="dir">06-rollback-specification/</span>  <span class="comment"># Cat A/B/C triggers (11 KB)</span>
+│   ├── <span class="dir">07-runbook-playbook/</span>        <span class="comment"># Ops documentation index</span>
+│   └── <span class="dir">08-observability/</span>           <span class="comment"># DORA + dashboards (12 KB)</span>
+├── <span class="dir">pipeline/</span>
+│   ├── <span class="dir">.github/workflows/</span>          <span class="comment"># ci-pipeline.yml + 2 reusable</span>
+│   ├── <span class="dir">helm/novapay/</span>
+│   │   ├── Chart.yaml, values.yaml
+│   │   ├── <span class="new">values-staging.yaml</span>
+│   │   ├── <span class="new">values-production.yaml</span>
+│   │   └── <span class="dir">templates/</span>              <span class="comment"># 6 templates (deployment, svc, HPA, Istio, netpol)</span>
+│   ├── <span class="dir">terraform/</span>
+│   │   ├── <span class="new">main.tf, variables.tf, outputs.tf, backend.tf</span>
+│   │   └── <span class="dir">modules/</span>               <span class="comment"># vpc/, eks/, rds/ (each: main, vars, outputs)</span>
+│   ├── <span class="dir">policies/</span>                   <span class="comment"># 4 OPA Rego + 2 Kyverno YAML</span>
+│   ├── <span class="new dir">scripts/</span>                    <span class="comment"># 5 scripts (coverage, canary, rollback, etc.)</span>
+│   └── <span class="new">argocd-application.yaml</span>
+├── <span class="dir">dashboards/</span>
+│   ├── <span class="new dir">grafana/</span>                   <span class="comment"># 3 dashboard JSONs</span>
+│   └── <span class="new dir">mockups/</span>                   <span class="comment"># Mermaid wireframes</span>
+├── <span class="dir">runbooks/</span>
+│   ├── deployment-runbook.md      <span class="comment"># 3 AM standard (7 KB)</span>
+│   └── incident-playbook.md      <span class="comment"># 4-level severity (11 KB)</span>
+└── <span class="dir">evidence/</span>
+    ├── <span class="new">self-assessment.md</span>         <span class="comment"># Badge scores: 376/405</span>
+    ├── <span class="new">reflections.md</span>             <span class="comment"># 5 questions (200-400 words each)</span>
+    ├── <span class="new">incident-simulation.md</span>     <span class="comment"># Friday 5 PM scenario</span>
+    ├── <span class="new">post-mortem.md</span>             <span class="comment"># RCA + 7 action items</span>
+    └── <span class="new">trc-presentation.md</span>        <span class="comment"># 20-slide TRC deck</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <p>Built by <span class="footer-brand">Nihal N</span> — DevOps & Cloud Engineer Track</p>
+        <p style="margin-top: 0.5rem; font-size: 0.75rem;">NovaPay Digital Bank • Zero-Downtime CI/CD Pipeline with Compliance Gates • 2026</p>
+    </footer>
+
+    <script>
+        // Scroll reveal
+        const reveals = document.querySelectorAll('.reveal');
+        const revealObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                }
+            });
+        }, { threshold: 0.1 });
+        reveals.forEach(el => revealObserver.observe(el));
+
+        // Counter animation
+        const counters = document.querySelectorAll('.count-up');
+        const counterObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const el = entry.target;
+                    const target = parseInt(el.getAttribute('data-target'));
+                    let current = 0;
+                    const duration = 1500;
+                    const step = target / (duration / 16);
+                    const timer = setInterval(() => {
+                        current += step;
+                        if (current >= target) {
+                            el.textContent = target;
+                            clearInterval(timer);
+                        } else {
+                            el.textContent = Math.floor(current);
+                        }
+                    }, 16);
+                    counterObserver.unobserve(el);
+                }
+            });
+        }, { threshold: 0.5 });
+        counters.forEach(el => counterObserver.observe(el));
+
+        // Progress bars
+        const progressBars = document.querySelectorAll('.progress-fill');
+        const progressObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const bar = entry.target;
+                    bar.style.width = bar.getAttribute('data-width') + '%';
+                    progressObserver.unobserve(bar);
+                }
+            });
+        }, { threshold: 0.5 });
+        progressBars.forEach(el => progressObserver.observe(el));
+
+        // Nav scroll effect
+        const nav = document.getElementById('navbar');
+        window.addEventListener('scroll', () => {
+            nav.classList.toggle('scrolled', window.scrollY > 50);
+        });
+
+        // Active nav link
+        const sections = document.querySelectorAll('section[id]');
+        const navLinks = document.querySelectorAll('.nav-links a');
+        window.addEventListener('scroll', () => {
+            let current = '';
+            sections.forEach(section => {
+                const sectionTop = section.offsetTop - 100;
+                if (scrollY >= sectionTop) current = section.getAttribute('id');
+            });
+            navLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href') === '#' + current) link.classList.add('active');
+            });
+        });
+
+        // Pipeline stage hover effect
+        document.querySelectorAll('.pipeline-stage').forEach(stage => {
+            stage.addEventListener('mouseenter', () => {
+                document.querySelectorAll('.pipeline-stage').forEach(s => s.classList.remove('active'));
+                stage.classList.add('active');
+            });
+        });
+    </script>
+</body>
+</html>

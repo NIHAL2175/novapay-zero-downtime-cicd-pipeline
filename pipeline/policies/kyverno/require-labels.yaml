@@ -1,0 +1,37 @@
+# Kyverno Policy: Require Labels
+# NovaPay Policy NP-K8S-008
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-labels
+  annotations:
+    policies.kyverno.io/title: Require Labels
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      All NovaPay resources must have standard labels for traceability
+      and compliance reporting.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: check-required-labels
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+                - StatefulSet
+                - Service
+      validate:
+        message: >-
+          POLICY VIOLATION NP-K8S-008: The following labels are required:
+          'app', 'version', 'owner', 'compliance-tier'.
+          Found labels: {{request.object.metadata.labels}}
+        pattern:
+          metadata:
+            labels:
+              app: "?*"
+              version: "?*"
+              owner: "?*"
+              compliance-tier: "?*"

@@ -1,0 +1,122 @@
+{
+  "description": "NovaPay Management Dashboard — Weekly/monthly executive view of delivery performance, reliability, and compliance posture",
+  "editable": true,
+  "panels": [
+    {
+      "title": "Executive Summary",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "title": "Deployments This Week",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "targets": [{ "expr": "sum(increase(argocd_app_sync_total{name=\"novapay-production\",phase=\"Succeeded\"}[7d]))" }],
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "steps": [{ "color": "red", "value": 0 }, { "color": "green", "value": 5 }] } } }
+    },
+    {
+      "title": "Avg Lead Time",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "targets": [{ "expr": "avg(novapay_pipeline_lead_time_seconds) / 3600", "legendFormat": "hours" }],
+      "fieldConfig": { "defaults": { "unit": "h", "thresholds": { "steps": [{ "color": "green", "value": 0 }, { "color": "yellow", "value": 2 }, { "color": "red", "value": 8 }] } } }
+    },
+    {
+      "title": "Change Failure Rate",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "targets": [{ "expr": "(sum(increase(novapay_rollback_total[30d])) / sum(increase(argocd_app_sync_total{phase=\"Succeeded\"}[30d]))) * 100" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "thresholds": { "steps": [{ "color": "green", "value": 0 }, { "color": "yellow", "value": 5 }, { "color": "red", "value": 15 }] } } }
+    },
+    {
+      "title": "MTTR (avg)",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "targets": [{ "expr": "avg(novapay_incident_recovery_duration_seconds) / 60" }],
+      "fieldConfig": { "defaults": { "unit": "m", "thresholds": { "steps": [{ "color": "green", "value": 0 }, { "color": "yellow", "value": 15 }, { "color": "red", "value": 60 }] } } }
+    },
+    {
+      "title": "Availability (30d)",
+      "type": "gauge",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "targets": [{ "expr": "(1 - sum(increase(novapay_downtime_seconds_total[30d])) / (30 * 24 * 3600)) * 100" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 99, "max": 100, "thresholds": { "steps": [{ "color": "red", "value": 99 }, { "color": "yellow", "value": 99.9 }, { "color": "green", "value": 99.99 }] } } }
+    },
+    {
+      "title": "Active Incidents",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "targets": [{ "expr": "sum(novapay_active_incidents)" }],
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "color": "green", "value": 0 }, { "color": "red", "value": 1 }] } } }
+    },
+    {
+      "title": "Delivery Trends",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 }
+    },
+    {
+      "title": "Weekly Deployment Trend (12 weeks)",
+      "type": "barchart",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "targets": [{ "expr": "sum(increase(argocd_app_sync_total{name=\"novapay-production\",phase=\"Succeeded\"}[7d]))", "legendFormat": "Deployments" }]
+    },
+    {
+      "title": "Lead Time Trend (12 weeks)",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "targets": [
+        { "expr": "avg(novapay_pipeline_lead_time_seconds) / 60", "legendFormat": "Avg Lead Time (min)" },
+        { "expr": "quantile(0.95, novapay_pipeline_lead_time_seconds) / 60", "legendFormat": "p95 Lead Time (min)" }
+      ]
+    },
+    {
+      "title": "Cost & Efficiency",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 }
+    },
+    {
+      "title": "Pipeline Cost per Deployment",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 15 },
+      "targets": [{ "expr": "avg(novapay_pipeline_cost_usd)", "legendFormat": "$/deploy" }],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" } }
+    },
+    {
+      "title": "Automation Ratio",
+      "type": "gauge",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 15 },
+      "targets": [{ "expr": "(novapay_automated_steps / novapay_total_steps) * 100" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "thresholds": { "steps": [{ "color": "red", "value": 0 }, { "color": "yellow", "value": 80 }, { "color": "green", "value": 95 }] } } }
+    },
+    {
+      "title": "Developer Feedback Loop",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 15 },
+      "targets": [{ "expr": "avg(novapay_developer_feedback_seconds) / 60", "legendFormat": "Avg feedback (min)" }],
+      "fieldConfig": { "defaults": { "unit": "m", "thresholds": { "steps": [{ "color": "green", "value": 0 }, { "color": "yellow", "value": 10 }, { "color": "red", "value": 30 }] } } }
+    }
+  ],
+  "refresh": "5m",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["novapay", "management", "executive", "dora"],
+  "time": { "from": "now-30d", "to": "now" },
+  "timezone": "Asia/Kolkata",
+  "title": "NovaPay Management Dashboard",
+  "uid": "novapay-management",
+  "version": 1
+}

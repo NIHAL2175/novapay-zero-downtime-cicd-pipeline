@@ -1,0 +1,109 @@
+# NovaPay Helm Values — Base Configuration (shared across all environments)
+# Environment-specific overrides in values-staging.yaml and values-production.yaml
+
+replicaCount: 1
+
+image:
+  repository: artifactory.novapay.internal/docker-local/novapay-app
+  pullPolicy: IfNotPresent
+  tag: ""  # Overridden by CI/CD pipeline
+
+serviceAccount:
+  create: true
+  name: novapay-app
+  annotations:
+    vault.hashicorp.com/agent-inject: "true"
+    vault.hashicorp.com/role: "novapay-app"
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+
+ingress:
+  enabled: true
+  className: istio
+  annotations:
+    kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: novapay.internal
+      paths:
+        - path: /api/
+          pathType: Prefix
+  tls:
+    - secretName: novapay-tls
+      hosts:
+        - novapay.internal
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+
+livenessProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: 8080
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /actuator/health/readiness
+    port: 8080
+  initialDelaySeconds: 15
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+startupProbe:
+  httpGet:
+    path: /actuator/health
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  failureThreshold: 30
+
+env:
+  - name: SPRING_PROFILES_ACTIVE
+    value: "default"
+  - name: SERVER_SHUTDOWN
+    value: "graceful"
+  - name: SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE
+    value: "45s"
+  - name: JAVA_OPTS
+    value: "-XX:+UseG1GC -XX:MaxRAMPercentage=75.0"
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+labels:
+  app: novapay-app
+  owner: sre-team
+  compliance-tier: critical
+
+terminationGracePeriodSeconds: 60
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

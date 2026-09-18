@@ -1,0 +1,90 @@
+# NovaPay Deployment — Kubernetes Deployment Manifest
+# Implements: Pod security context, resource limits, health probes, graceful shutdown
+# Compliance: RBI Section 5.4 (encryption), PCI-DSS Req 6.5 (secure config)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "novapay.fullname" . }}
+  labels:
+    {{- include "novapay.labels" . | nindent 4 }}
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+    novapay.internal/compliance-tier: {{ .Values.labels.complianceTier | default "critical" | quote }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "novapay.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "novapay.selectorLabels" . | nindent 8 }}
+        app: {{ .Values.labels.app | default "novapay-app" }}
+        owner: {{ .Values.labels.owner | default "sre-team" }}
+        compliance-tier: {{ .Values.labels.complianceTier | default "critical" | quote }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/actuator/prometheus"
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "novapay-app"
+    spec:
+      serviceAccountName: {{ include "novapay.serviceAccountName" . }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds | default 60 }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: {{ include "novapay.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: TCP
+          env:
+            {{- toYaml .Values.env | nindent 12 }}
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          startupProbe:
+            {{- toYaml .Values.startupProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp-dir
+              mountPath: /tmp
+            - name: log-dir
+              mountPath: /var/log/novapay
+      volumes:
+        - name: tmp-dir
+          emptyDir:
+            sizeLimit: 100Mi
+        - name: log-dir
+          emptyDir:
+            sizeLimit: 500Mi
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              {{- include "novapay.selectorLabels" . | nindent 14 }}

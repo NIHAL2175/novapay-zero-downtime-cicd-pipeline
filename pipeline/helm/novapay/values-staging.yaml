@@ -1,0 +1,74 @@
+# NovaPay Helm Values — Staging Environment Override
+# Purpose: Integration testing, DAST, performance baseline
+# Data profile: Anonymised production-like data
+# Access: Dev team + QA
+# Deploy trigger: Automatic after dev gates pass
+
+replicaCount: 2
+
+image:
+  pullPolicy: Always
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+
+env:
+  - name: SPRING_PROFILES_ACTIVE
+    value: "staging"
+  - name: SERVER_SHUTDOWN
+    value: "graceful"
+  - name: SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE
+    value: "45s"
+  - name: JAVA_OPTS
+    value: "-XX:+UseG1GC -XX:MaxRAMPercentage=75.0 -Dspring.devtools.restart.enabled=false"
+  - name: SPRING_DATASOURCE_URL
+    value: "jdbc:postgresql://postgresql.novapay-shared:5432/novapay_staging"
+  - name: SPRING_REDIS_HOST
+    value: "redis.novapay-shared"
+  - name: SPRING_RABBITMQ_HOST
+    value: "rabbitmq.novapay-shared"
+  - name: OTEL_EXPORTER_OTLP_ENDPOINT
+    value: "http://otel-collector.monitoring:4317"
+  - name: OTEL_SERVICE_NAME
+    value: "novapay-app-staging"
+
+ingress:
+  enabled: true
+  className: istio
+  hosts:
+    - host: staging.novapay.internal
+      paths:
+        - path: /api/
+          pathType: Prefix
+  tls:
+    - secretName: novapay-staging-tls
+      hosts:
+        - staging.novapay.internal
+
+virtualService:
+  host: staging.novapay.internal
+  gateway: novapay-staging-gateway
+
+trafficSplit:
+  stable: 100
+
+labels:
+  app: novapay-app
+  owner: sre-team
+  complianceTier: critical
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

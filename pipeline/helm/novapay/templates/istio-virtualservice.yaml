@@ -1,0 +1,85 @@
+# NovaPay Istio VirtualService — Traffic Management
+# Supports blue-green switching and canary progressive rollout
+# Ref: Deliverable 2 (Deployment Strategies)
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: {{ include "novapay.fullname" . }}
+  labels:
+    {{- include "novapay.labels" . | nindent 4 }}
+  annotations:
+    novapay.internal/deployment-strategy: {{ .Values.deploymentStrategy | default "canary" | quote }}
+spec:
+  hosts:
+    - {{ .Values.virtualService.host | default "novapay.internal" }}
+  gateways:
+    - {{ .Values.virtualService.gateway | default "novapay-gateway" }}
+  http:
+    - match:
+        - headers:
+            x-canary:
+              exact: "true"
+      route:
+        - destination:
+            host: {{ include "novapay.fullname" . }}
+            subset: canary
+          weight: 100
+    - route:
+        - destination:
+            host: {{ include "novapay.fullname" . }}
+            subset: stable
+          weight: {{ .Values.trafficSplit.stable | default 100 }}
+        {{- if .Values.trafficSplit.canary }}
+        - destination:
+            host: {{ include "novapay.fullname" . }}
+            subset: canary
+          weight: {{ .Values.trafficSplit.canary }}
+        {{- end }}
+      retries:
+        attempts: 3
+        perTryTimeout: 2s
+        retryOn: "5xx,reset,connect-failure"
+      timeout: 30s
+      fault:
+        abort:
+          percentage:
+            value: 0
+---
+# NovaPay Istio DestinationRule — Subset Definitions for Blue-Green & Canary
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: {{ include "novapay.fullname" . }}
+  labels:
+    {{- include "novapay.labels" . | nindent 4 }}
+spec:
+  host: {{ include "novapay.fullname" . }}
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 1000
+        connectTimeout: 5s
+      http:
+        h2UpgradePolicy: DEFAULT
+        maxRequestsPerConnection: 100
+        maxRetries: 3
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 10s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+    tls:
+      mode: ISTIO_MUTUAL
+  subsets:
+    - name: stable
+      labels:
+        version: stable
+    - name: canary
+      labels:
+        version: canary
+    - name: blue
+      labels:
+        deployment-color: blue
+    - name: green
+      labels:
+        deployment-color: green

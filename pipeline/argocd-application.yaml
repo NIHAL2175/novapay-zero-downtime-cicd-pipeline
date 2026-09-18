@@ -1,0 +1,115 @@
+# NovaPay ArgoCD Application Manifest — Production Deployment
+# GitOps: Declarative deployment with automated sync + self-healing
+# Ref: Deliverable 1 (Stage 8), Deliverable 5 (Environment Promotion)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: novapay-production
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: novapay-digital-bank
+    environment: production
+    compliance-tier: critical
+  annotations:
+    notifications.argoproj.io/subscribe.on-sync-succeeded.slack: novapay-deployments
+    notifications.argoproj.io/subscribe.on-sync-failed.slack: novapay-incidents
+    notifications.argoproj.io/subscribe.on-health-degraded.pagerduty: novapay-sre
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: novapay
+
+  source:
+    repoURL: https://github.com/novapay/k8s-manifests
+    targetRevision: HEAD
+    path: pipeline/helm/novapay
+    helm:
+      valueFiles:
+        - values.yaml
+        - values-production.yaml
+      parameters:
+        - name: image.tag
+          value: "2.14.3"  # Overridden by CI/CD pipeline
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: novapay-prod
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m0s
+
+  # Drift detection — alerts on any manual changes
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas  # HPA manages replicas
+
+  revisionHistoryLimit: 10
+
+---
+# ArgoCD AppProject — NovaPay Scope Restrictions
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: novapay
+  namespace: argocd
+spec:
+  description: NovaPay Digital Bank application project
+  sourceRepos:
+    - https://github.com/novapay/k8s-manifests
+    - https://github.com/novapay/novapay-app
+  destinations:
+    - namespace: novapay-prod
+      server: https://kubernetes.default.svc
+    - namespace: novapay-prod-blue
+      server: https://kubernetes.default.svc
+    - namespace: novapay-prod-green
+      server: https://kubernetes.default.svc
+    - namespace: novapay-pre-prod
+      server: https://kubernetes.default.svc
+    - namespace: novapay-staging
+      server: https://kubernetes.default.svc
+    - namespace: novapay-dev
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+  roles:
+    - name: release-manager
+      description: Can sync and manage deployments
+      policies:
+        - p, proj:novapay:release-manager, applications, sync, novapay/*, allow
+        - p, proj:novapay:release-manager, applications, get, novapay/*, allow
+      groups:
+        - novapay-release-managers
+    - name: sre-lead
+      description: Full access to ArgoCD applications
+      policies:
+        - p, proj:novapay:sre-lead, applications, *, novapay/*, allow
+      groups:
+        - novapay-sre-leads
+    - name: developer
+      description: Read-only access to deployment status
+      policies:
+        - p, proj:novapay:developer, applications, get, novapay/*, allow
+      groups:
+        - novapay-developers

@@ -1,0 +1,14 @@
+apiVersion: v2
+name: novapay
+description: NovaPay Digital Bank Helm Chart
+type: application
+version: 2.14.3
+appVersion: "2.14.3"
+maintainers:
+  - name: Nihal N
+    email: nihal_n@novapay.internal
+keywords:
+  - banking
+  - novapay
+  - cicd
+  - zero-downtime

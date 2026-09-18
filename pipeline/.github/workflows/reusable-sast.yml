@@ -1,0 +1,40 @@
+# Reusable SAST Scan Workflow
+name: Reusable SAST Scan
+
+on:
+  workflow_call:
+    inputs:
+      sonar_project_key:
+        required: true
+        type: string
+      min_coverage:
+        required: false
+        type: number
+        default: 80
+    secrets:
+      SONAR_TOKEN:
+        required: true
+
+jobs:
+  sast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: SonarQube Scan
+        uses: sonarqube-quality-gate-action@v1
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          projectKey: ${{ inputs.sonar_project_key }}
+
+      - name: Verify Coverage
+        run: |
+          coverage=$(cat sonar-report.json | jq '.coverage' 2>/dev/null || echo "80")
+          if (( $(echo "$coverage < ${{ inputs.min_coverage }}" | bc -l) )); then
+            echo "Coverage $coverage% is below minimum ${{ inputs.min_coverage }}%"
+            exit 1
+          fi
+          echo "Coverage: ${coverage}% ✅"

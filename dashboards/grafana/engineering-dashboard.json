@@ -1,0 +1,242 @@
+{
+  "__inputs": [],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      },
+      {
+        "datasource": "Prometheus",
+        "enable": true,
+        "iconColor": "#FF4444",
+        "name": "Deployments",
+        "expr": "changes(kube_deployment_status_observed_generation{namespace=\"novapay-prod\"}[1m]) > 0"
+      },
+      {
+        "datasource": "Prometheus",
+        "enable": true,
+        "iconColor": "#FF9900",
+        "name": "Rollbacks",
+        "expr": "novapay_rollback_total > 0"
+      }
+    ]
+  },
+  "description": "NovaPay Engineering Dashboard — Real-time operational view with DORA metrics, pipeline health, and deployment status",
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 1,
+  "id": null,
+  "iteration": 1724500000000,
+  "links": [],
+  "panels": [
+    {
+      "title": "DORA Metrics Overview",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "title": "Deployment Frequency",
+      "description": "Number of production deployments per day (Elite target: multiple per day)",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "targets": [
+        {
+          "expr": "sum(increase(argocd_app_sync_total{name=\"novapay-production\",phase=\"Succeeded\"}[24h]))",
+          "legendFormat": "Deploys/day"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "yellow", "value": 1 },
+              { "color": "green", "value": 3 }
+            ]
+          },
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "title": "Lead Time for Changes",
+      "description": "Time from commit to production deployment (Elite target: < 1 hour)",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "targets": [
+        {
+          "expr": "avg(novapay_pipeline_lead_time_seconds) / 60",
+          "legendFormat": "Avg Lead Time (min)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 60 },
+              { "color": "red", "value": 120 }
+            ]
+          },
+          "unit": "m"
+        }
+      }
+    },
+    {
+      "title": "Change Failure Rate",
+      "description": "Percentage of deployments causing failures (Elite target: < 5%)",
+      "type": "gauge",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "targets": [
+        {
+          "expr": "(sum(increase(novapay_rollback_total[30d])) / sum(increase(argocd_app_sync_total{name=\"novapay-production\",phase=\"Succeeded\"}[30d]))) * 100",
+          "legendFormat": "CFR %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 15 }
+            ]
+          },
+          "unit": "percent",
+          "max": 100
+        }
+      }
+    },
+    {
+      "title": "MTTR",
+      "description": "Mean Time to Recovery (Elite target: < 1 hour)",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "targets": [
+        {
+          "expr": "avg(novapay_incident_recovery_duration_seconds) / 60",
+          "legendFormat": "MTTR (min)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 15 },
+              { "color": "red", "value": 60 }
+            ]
+          },
+          "unit": "m"
+        }
+      }
+    },
+    {
+      "title": "Pipeline Health",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 }
+    },
+    {
+      "title": "Pipeline Success Rate (7d)",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "targets": [
+        {
+          "expr": "(sum(rate(github_actions_workflow_run_total{status=\"completed\",conclusion=\"success\"}[1h])) / sum(rate(github_actions_workflow_run_total{status=\"completed\"}[1h]))) * 100",
+          "legendFormat": "Success Rate %"
+        }
+      ]
+    },
+    {
+      "title": "Pipeline Stage Duration",
+      "type": "barchart",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "targets": [
+        { "expr": "avg(novapay_pipeline_stage_duration_seconds{stage=\"build\"})", "legendFormat": "Build" },
+        { "expr": "avg(novapay_pipeline_stage_duration_seconds{stage=\"sast\"})", "legendFormat": "SAST" },
+        { "expr": "avg(novapay_pipeline_stage_duration_seconds{stage=\"container_scan\"})", "legendFormat": "Scan" },
+        { "expr": "avg(novapay_pipeline_stage_duration_seconds{stage=\"integration\"})", "legendFormat": "Integration" },
+        { "expr": "avg(novapay_pipeline_stage_duration_seconds{stage=\"dast\"})", "legendFormat": "DAST" },
+        { "expr": "avg(novapay_pipeline_stage_duration_seconds{stage=\"compliance\"})", "legendFormat": "Compliance" },
+        { "expr": "avg(novapay_pipeline_stage_duration_seconds{stage=\"deploy\"})", "legendFormat": "Deploy" }
+      ]
+    },
+    {
+      "title": "Application Health",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 }
+    },
+    {
+      "title": "HTTP Request Rate & Errors",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_requests_seconds_count{namespace=\"novapay-prod\"}[5m]))",
+          "legendFormat": "Total RPS"
+        },
+        {
+          "expr": "sum(rate(http_server_requests_seconds_count{namespace=\"novapay-prod\",status=~\"5..\"}[5m]))",
+          "legendFormat": "5xx Errors"
+        }
+      ]
+    },
+    {
+      "title": "p50 / p95 / p99 Latency",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(http_server_requests_seconds_bucket{namespace=\"novapay-prod\"}[5m])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{namespace=\"novapay-prod\"}[5m])) by (le))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket{namespace=\"novapay-prod\"}[5m])) by (le))",
+          "legendFormat": "p99"
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["novapay", "engineering", "dora", "pipeline"],
+  "templating": {
+    "list": [
+      {
+        "name": "namespace",
+        "type": "query",
+        "datasource": "Prometheus",
+        "query": "label_values(kube_namespace_labels, namespace)",
+        "current": { "text": "novapay-prod", "value": "novapay-prod" }
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "Asia/Kolkata",
+  "title": "NovaPay Engineering Dashboard",
+  "uid": "novapay-engineering",
+  "version": 1
+}

@@ -1,0 +1,50 @@
+# Kyverno Policy: Require Health Probes
+# NovaPay Policy NP-K8S-005
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-probes
+  annotations:
+    policies.kyverno.io/title: Require Health Probes
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      All NovaPay deployments must have liveness, readiness,
+      and startup probes configured for reliability.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: check-liveness-probe
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+      validate:
+        message: "POLICY VIOLATION NP-K8S-005: Liveness probe is required on all containers."
+        pattern:
+          spec:
+            template:
+              spec:
+                containers:
+                  - livenessProbe:
+                      httpGet:
+                        path: "?*"
+                        port: "?*"
+    - name: check-readiness-probe
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+      validate:
+        message: "POLICY VIOLATION NP-K8S-005: Readiness probe is required on all containers."
+        pattern:
+          spec:
+            template:
+              spec:
+                containers:
+                  - readinessProbe:
+                      httpGet:
+                        path: "?*"
+                        port: "?*"

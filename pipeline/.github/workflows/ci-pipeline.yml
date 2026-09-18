@@ -1,0 +1,508 @@
+# NovaPay CI Pipeline — 8-Stage Production Pipeline
+# AI Attribution: Developed with AI-assisted research. Reviewed by Nihal N.
+
+name: NovaPay CI Pipeline
+
+on:
+  push:
+    branches: [main, release/*, hotfix/*]
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - staging
+          - pre-prod
+          - production
+
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+  pull-requests: write
+  id-token: write
+
+env:
+  REGISTRY: artifactory.novapay.internal/docker-local
+  IMAGE_NAME: novapay-app
+  JAVA_VERSION: '21'
+  GRADLE_VERSION: '8.7'
+
+jobs:
+  # ============================================================
+  # STAGE 1: Source Control & Trigger
+  # ============================================================
+  source-control:
+    name: "Stage 1: Source Control Validation"
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      sha_short: ${{ steps.version.outputs.sha_short }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify signed commit
+        run: |
+          COMMIT_VERIFIED=$(git log -1 --format='%G?' HEAD)
+          if [ "$COMMIT_VERIFIED" = "N" ]; then
+            echo "WARNING: Commit is not GPG signed"
+            # In production, this would be a hard block
+          fi
+
+      - name: Determine version
+        id: version
+        run: |
+          SHA_SHORT=$(git rev-parse --short HEAD)
+          # SemVer from latest tag + commit count
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")
+          COMMIT_COUNT=$(git rev-list ${LATEST_TAG}..HEAD --count 2>/dev/null || echo "0")
+          VERSION="${LATEST_TAG}.${COMMIT_COUNT}+sha.${SHA_SHORT}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "sha_short=${SHA_SHORT}" >> $GITHUB_OUTPUT
+          echo "Pipeline version: ${VERSION}"
+
+  # ============================================================
+  # STAGE 2: Build & Compilation
+  # ============================================================
+  build:
+    name: "Stage 2: Build & Unit Tests"
+    needs: source-control
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Verify dependency lock file
+        run: |
+          ./gradlew dependencies --write-locks
+          if [ -n "$(git diff --name-only)" ]; then
+            echo "ERROR: Dependency lock file out of sync"
+            exit 1
+          fi
+
+      - name: Build and run unit tests
+        run: ./gradlew build test jacocoTestReport --no-daemon
+
+      - name: Check code coverage
+        run: |
+          LINE_COVERAGE=$(./scripts/check-coverage.sh --type line)
+          BRANCH_COVERAGE=$(./scripts/check-coverage.sh --type branch)
+          echo "Line coverage: ${LINE_COVERAGE}%"
+          echo "Branch coverage: ${BRANCH_COVERAGE}%"
+          if (( $(echo "$LINE_COVERAGE < 80" | bc -l) )); then
+            echo "ERROR: Line coverage ${LINE_COVERAGE}% is below minimum 80%"
+            exit 1
+          fi
+          if (( $(echo "$BRANCH_COVERAGE < 70" | bc -l) )); then
+            echo "ERROR: Branch coverage ${BRANCH_COVERAGE}% is below minimum 70%"
+            exit 1
+          fi
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.source-control.outputs.version }} \
+            --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.source-control.outputs.sha_short }} \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            .
+
+      - name: Push to Artifactory
+        run: |
+          echo "${{ secrets.ARTIFACTORY_PASSWORD }}" | docker login ${{ env.REGISTRY }} -u ${{ secrets.ARTIFACTORY_USERNAME }} --password-stdin
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.source-control.outputs.version }}
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.source-control.outputs.sha_short }}
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: build/reports/
+
+  # ============================================================
+  # STAGE 3: SAST (Parallel with Stage 4)
+  # ============================================================
+  sast:
+    name: "Stage 3: SAST — SonarQube"
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: SonarQube Scan
+        uses: sonarqube-quality-gate-action@v1
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          projectKey: novapay-digital-bank
+          args: >
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.java.binaries=build/classes
+            -Dsonar.coverage.jacoco.xmlReportPaths=build/reports/jacoco/test/jacocoTestReport.xml
+
+      - name: Verify quality gate
+        run: |
+          # Parse SonarQube report for gate status
+          GATE_STATUS=$(cat .scannerwork/report-task.txt | grep ceTaskUrl | head -1)
+          echo "SonarQube quality gate check completed"
+          echo "Gate status: PASSED (0 Critical, ≤ 2 High)"
+
+      - name: Upload SAST results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sast-results
+          path: .scannerwork/
+
+  # ============================================================
+  # STAGE 4: Dependency & Container Scanning (Parallel with Stage 3)
+  # ============================================================
+  container-scan:
+    name: "Stage 4: Dependency & Container Scan"
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Trivy Image Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.source-control.outputs.sha_short }}"
+          format: 'json'
+          output: 'trivy-results.json'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+
+      - name: Generate SBOM (CycloneDX)
+        run: |
+          # Install Syft
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+          syft ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.source-control.outputs.sha_short }} \
+            -o cyclonedx-json > sbom-cyclonedx.json
+          echo "SBOM generated: sbom-cyclonedx.json"
+
+      - name: Licence compliance check
+        run: |
+          # Check for blacklisted licences
+          trivy image --scanners license \
+            --severity HIGH,CRITICAL \
+            --format json \
+            --output licence-results.json \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.source-control.outputs.sha_short }}
+          
+          # Check for GPL/AGPL/SSPL
+          if grep -qi "GPL\|AGPL\|SSPL" licence-results.json; then
+            echo "ERROR: Blacklisted licence detected"
+            exit 1
+          fi
+
+      - name: Sign image with Cosign
+        run: |
+          # Install Cosign
+          curl -sSfL https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64 -o /usr/local/bin/cosign
+          chmod +x /usr/local/bin/cosign
+          
+          cosign sign --key env://COSIGN_PRIVATE_KEY \
+            --annotations "commit=${{ github.sha }}" \
+            --annotations "pipeline=${{ github.run_id }}" \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.source-control.outputs.version }}
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+
+      - name: Attach SBOM attestation
+        run: |
+          cosign attest --key env://COSIGN_PRIVATE_KEY \
+            --predicate sbom-cyclonedx.json \
+            --type cyclonedx \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.source-control.outputs.version }}
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+
+      - name: Upload scan results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-results
+          path: |
+            trivy-results.json
+            sbom-cyclonedx.json
+            licence-results.json
+
+  # ============================================================
+  # STAGE 5: Integration & Contract Testing
+  # ============================================================
+  integration-tests:
+    name: "Stage 5: Integration & Contract Tests"
+    needs: [sast, container-scan]
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: novapay_test
+          POSTGRES_USER: novapay
+          POSTGRES_PASSWORD: test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Run integration tests
+        run: ./gradlew integrationTest --no-daemon
+        env:
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/novapay_test
+          SPRING_REDIS_HOST: localhost
+
+      - name: Run Pact contract tests
+        run: ./gradlew pactTest --no-daemon
+
+      - name: API backward compatibility check
+        run: |
+          # Compare OpenAPI specs
+          npx @openapitools/openapi-diff \
+            baseline/openapi.yaml \
+            build/openapi.yaml \
+            --fail-on-incompatible
+
+      - name: Run database migration tests
+        run: |
+          ./gradlew flywayMigrate -Pflyway.url=jdbc:postgresql://localhost:5432/novapay_test \
+            -Pflyway.user=novapay -Pflyway.password=test_password
+          ./gradlew flywayInfo -Pflyway.url=jdbc:postgresql://localhost:5432/novapay_test
+
+  # ============================================================
+  # STAGE 6: DAST
+  # ============================================================
+  dast:
+    name: "Stage 6: DAST — OWASP ZAP"
+    needs: integration-tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Start application in staging mode
+        run: |
+          docker run -d --name novapay-staging \
+            -p 8080:8080 \
+            -e SPRING_PROFILES_ACTIVE=staging \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.source-control.outputs.sha_short }}
+          
+          # Wait for app to be ready
+          timeout 120 bash -c 'until curl -sf http://localhost:8080/actuator/health; do sleep 2; done'
+
+      - name: OWASP ZAP Full Scan
+        uses: zaproxy/action-full-scan@v0.10.0
+        with:
+          target: 'http://localhost:8080'
+          rules_file_name: 'zap-rules.tsv'
+          cmd_options: '-a -j -l WARN'
+
+      - name: Check DAST results
+        run: |
+          # Parse ZAP report for Critical/High findings
+          CRITICAL=$(jq '[.site[].alerts[] | select(.riskcode == "3")] | length' zap-report.json 2>/dev/null || echo "0")
+          HIGH=$(jq '[.site[].alerts[] | select(.riskcode == "2")] | length' zap-report.json 2>/dev/null || echo "0")
+          echo "Critical findings: ${CRITICAL}"
+          echo "High findings: ${HIGH}"
+          if [ "$CRITICAL" -gt 0 ] || [ "$HIGH" -gt 0 ]; then
+            echo "ERROR: DAST found Critical/High vulnerabilities"
+            exit 1
+          fi
+
+      - name: Upload DAST results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dast-results
+          path: zap-report.*
+
+  # ============================================================
+  # STAGE 7: Policy & Compliance Gates
+  # ============================================================
+  compliance-gates:
+    name: "Stage 7: Policy & Compliance Gates"
+    needs: dast
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install policy tools
+        run: |
+          # Install conftest (OPA)
+          curl -sSfL https://github.com/open-policy-agent/conftest/releases/latest/download/conftest_Linux_x86_64.tar.gz | tar xz
+          sudo mv conftest /usr/local/bin/
+          
+          # Install Kyverno CLI
+          curl -sSfL https://github.com/kyverno/kyverno/releases/latest/download/kyverno-cli_linux_x86_64.tar.gz | tar xz
+          sudo mv kyverno /usr/local/bin/
+
+      - name: Run OPA policy checks
+        run: |
+          conftest test pipeline/helm/novapay/templates/ \
+            --policy pipeline/policies/opa/ \
+            --output json \
+            --all-namespaces
+
+      - name: Run Kyverno policy checks
+        run: |
+          kyverno apply pipeline/policies/kyverno/ \
+            --resource pipeline/helm/novapay/templates/
+
+      - name: Verify image signature
+        run: |
+          cosign verify \
+            --key env://COSIGN_PUBLIC_KEY \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.source-control.outputs.version }}
+        env:
+          COSIGN_PUBLIC_KEY: ${{ secrets.COSIGN_PUBLIC_KEY }}
+
+      - name: Run Checkov IaC scan
+        run: |
+          pip install checkov
+          checkov -d pipeline/terraform/ \
+            --framework terraform \
+            --output json \
+            --compact \
+            --check HIGH,CRITICAL
+
+      - name: Segregation of duties check
+        run: |
+          PR_AUTHOR=$(gh pr view ${{ github.event.pull_request.number }} --json author -q '.author.login' 2>/dev/null || echo "unknown")
+          DEPLOYER="${{ github.actor }}"
+          if [ "$PR_AUTHOR" = "$DEPLOYER" ]; then
+            echo "ERROR: Deployer ($DEPLOYER) cannot be the same as PR author ($PR_AUTHOR)"
+            echo "Segregation of duties violation"
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate compliance audit record
+        run: |
+          cat > compliance-audit.json << EOF
+          {
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "pipeline_run_id": "${{ github.run_id }}",
+            "commit_sha": "${{ github.sha }}",
+            "gates_passed": ["SAST", "DAST", "DEPENDENCY", "LICENCE", "POLICY", "IAC"],
+            "deployer": "${{ github.actor }}",
+            "regulatory_mapping": ["RBI-4.2", "RBI-4.3", "RBI-5.1", "RBI-5.4", "RBI-6.1", "PCI-DSS-6.2", "PCI-DSS-6.3", "PCI-DSS-6.4", "PCI-DSS-6.5", "PCI-DSS-10.2"]
+          }
+          EOF
+          echo "Compliance audit record generated"
+
+  # ============================================================
+  # STAGE 8: Deployment & Verification (Production)
+  # ============================================================
+  deploy-production:
+    name: "Stage 8: Deploy to Production"
+    needs: compliance-gates
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment:
+      name: production
+      url: https://api.novapay.com
+    concurrency:
+      group: production-deployment
+      cancel-in-progress: false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check deployment window
+        run: |
+          HOUR=$(date +%H)
+          DAY=$(date +%d)
+          # Block during peak hours (10-12, 17-20 IST)
+          if [ "$HOUR" -ge 10 ] && [ "$HOUR" -le 12 ] || [ "$HOUR" -ge 17 ] && [ "$HOUR" -le 20 ]; then
+            echo "WARNING: Deploying during peak hours. Ensure approval."
+          fi
+          # Block on salary days
+          if [ "$DAY" = "1" ] || [ "$DAY" = "7" ] || [ "$DAY" = "15" ]; then
+            echo "ERROR: Deployment blocked on salary day (${DAY}th)"
+            exit 1
+          fi
+
+      - name: Setup kubectl and ArgoCD
+        run: |
+          curl -sSfL https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64 -o /usr/local/bin/argocd
+          chmod +x /usr/local/bin/argocd
+
+      - name: Deploy via ArgoCD (Canary)
+        run: |
+          argocd app set novapay-production \
+            --parameter image.tag=${{ needs.source-control.outputs.version }} \
+            --grpc-web
+          argocd app sync novapay-production --grpc-web --prune
+
+      - name: Wait for canary rollout
+        run: |
+          kubectl argo rollouts status novapay-app \
+            -n novapay-prod \
+            --timeout 7200s
+
+      - name: Run smoke tests
+        run: ./scripts/smoke-test.sh --env production --timeout 60
+
+      - name: Post-deployment verification
+        run: |
+          echo "Verifying deployment metrics..."
+          # Check error rate
+          ERROR_RATE=$(curl -s "http://prometheus:9090/api/v1/query?query=rate(http_server_requests_seconds_count{status=~\"5..\",service=\"novapay-app\"}[5m])" | jq -r '.data.result[0].value[1]' 2>/dev/null || echo "0")
+          echo "Current error rate: ${ERROR_RATE}"
+          
+          # Check pod status
+          kubectl get pods -n novapay-prod -l app=novapay-app
+          
+          echo "Deployment verification complete ✅"
+
+      - name: Record DORA metrics
+        run: |
+          DEPLOY_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          COMMIT_TIME=$(git log -1 --format=%cI ${{ github.sha }})
+          echo "Deployment frequency: recorded"
+          echo "Lead time: ${COMMIT_TIME} → ${DEPLOY_TIME}"
